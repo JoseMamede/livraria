@@ -44,62 +44,45 @@ class Livro:
         self.imagem_capa = imagem_capa
 
     def salvar(self):
-        """
-        Salva o livro no banco de dados.
-        :return: ID do livro inserido.
-        """
-        # Todo
-        pass
+        """Salva o livro no banco de dados."""
+        dados_livro = self.__dict__ # Converte o objeto em dicionário
+        resultado = livros.insert_one(dados_livro)
+        return resultado.inserted_id
 
     @staticmethod
     def buscar_por_id(id_livro):
-        """
-        Busca um livro pelo seu ID.
-        :param id_livro: ID do livro (string ou ObjectId)
-        :return: Dicionário com os dados do livro ou None.
-        """
-        # Todo
-        pass
+        """Busca um livro pelo seu ID (ObjectId)."""
+        return livros.find_one({"_id": ObjectId(id_livro)})
 
     @staticmethod
     def buscar_todos():
-        """
-        Retorna todos os livros cadastrados.
-        :return: Lista de livros.
-        """
-        # Todo
-        pass
+        """Retorna todos os livros cadastrados."""
+        return list(livros.find())
     
     @staticmethod
     def buscar_livros(filtros=None, pagina=1, por_pagina=12):
-        """
-        Busca livros com filtros e paginação.
-        :param filtros: Dicionário de filtros para busca.
-        :param pagina: Número da página.
-        :param por_pagina: Quantidade de livros por página.
-        :return: (Lista de livros, total de livros encontrados)
-        """
-        # Todo
-        pass
+        """Busca livros com filtros e paginação."""
+        if filtros is None:
+            filtros = {}
+        
+        # Lógica de Paginação: quanto pular e quanto mostrar
+        skip = (pagina - 1) * por_pagina
+        
+        cursor = livros.find(filtros).skip(skip).limit(por_pagina)
+        total = livros.count_documents(filtros)
+        
+        return list(cursor), total
 
     @staticmethod
     def categorias_disponiveis():
-        """
-        Retorna todas as categorias disponíveis no acervo.
-        :return: Lista de categorias.
-        """
-        # Todo
-        pass
+        """Retorna todas as categorias únicas."""
+        return livros.distinct("categoria")
 
     @staticmethod
     def tags_disponiveis():
-        """
-        Retorna todas as categorias disponíveis no acervo.
-        :return: Lista de categorias.
-        """
-        # Todo
-        pass
-
+        """Retorna todas as tags únicas."""
+        return livros.distinct("tags")
+    
 class Usuario:
     """
     Classe que representa um usuário da livraria.
