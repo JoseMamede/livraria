@@ -1,180 +1,126 @@
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 import os
+from bson.decimal128 import Decimal128 
+from datetime import datetime
 
 # ===========================
-# Configuração da conexão com o MongoDB Atlas
+# Configuração da conexão
 # ===========================
-
-# Obtém a URI do MongoDB a partir das variáveis de ambiente
 MONGO_URI = os.environ.get('MONGO_URI')
 client = MongoClient(MONGO_URI)
-db = client.livraria  # nome do banco de dados
+db = client.livraria 
 
-# Coleções utilizadas no banco de dados
-livros = db.livros
-usuarios = db.usuarios
-pedidos = db.pedidos
+livros_col = db.livros
+usuarios_col = db.usuarios
+pedidos_col = db.pedidos
 
 # ===========================
 # Classe Livro
 # ===========================
-
 class Livro:
-    """
-    Classe que representa um livro na livraria.
-    """
-    
-    def __init__(self, titulo, preco, categoria, tags, autores, mais_recente_edicao, numero_autores, data_publicacao, editora, descricao, isbn, estoque, imagem_capa):
-        """
-        Inicializa um objeto Livro com os atributos fornecidos.
-        """
-        self.titulo = titulo
-        self.preco = preco
-        self.categoria = categoria
-        self.tags = tags
-        self.autores = autores
-        self.mais_recente_edicao = mais_recente_edicao
-        self.numero_autores = numero_autores
-        self.data_publicacao = data_publicacao
-        self.editora = editora
-        self.descricao = descricao
-        self.isbn = isbn
-        self.estoque = estoque
-        self.imagem_capa = imagem_capa
-
-    def salvar(self):
-        """Salva o livro no banco de dados."""
-        dados_livro = self.__dict__ # Converte o objeto em dicionário
-        resultado = livros.insert_one(dados_livro)
-        return resultado.inserted_id
-
     @staticmethod
     def buscar_por_id(id_livro):
-        """Busca um livro pelo seu ID (ObjectId)."""
-        return livros.find_one({"_id": ObjectId(id_livro)})
+        try:
+            return livros_col.find_one({"_id": ObjectId(id_livro)})
+        except:
+            return None
 
     @staticmethod
     def buscar_todos():
-        """Retorna todos os livros cadastrados."""
-        return list(livros.find())
+        # Busca tudo para garantir que a tela inicial não fique vazia
+        return list(livros_col.find())
     
     @staticmethod
     def buscar_livros(filtros=None, pagina=1, por_pagina=12):
-        """Busca livros com filtros e paginação."""
-        if filtros is None:
-            filtros = {}
-        
-        # Lógica de Paginação: quanto pular e quanto mostrar
+        query = {}
+        if filtros:
+            # Busca flexível: tenta 'título' (com acento) ou 'titulo' (sem)
+            if filtros.get('titulo') or filtros.get('nome'):
+                termo = filtros.get('titulo') or filtros.get('nome')
+                query['$or'] = [
+                    {'título': {'$regex': termo, '$options': 'i'}},
+                    {'titulo': {'$regex': termo, '$options': 'i'}}
+                ]
+            
+            # Filtro de preço
+            if filtros.get('preco'):
+                query['preco'] = filtros['preco']
+            
+            # Filtro de categoria (tenta com acento se necessário)
+            if filtros.get('categoria'):
+                cat = filtros['categoria']
+                query['categoria'] = {'$in': cat} if isinstance(cat, list) else cat
+
         skip = (pagina - 1) * por_pagina
-        
-        cursor = livros.find(filtros).skip(skip).limit(por_pagina)
-        total = livros.count_documents(filtros)
-        
+        cursor = livros_col.find(query).skip(skip).limit(por_pagina)
+        total = livros_col.count_documents(query)
         return list(cursor), total
 
     @staticmethod
     def categorias_disponiveis():
-        """Retorna todas as categorias únicas."""
-        return livros.distinct("categoria")
+        # Pega as categorias únicas do seu banco
+        categorias = livros_col.distinct("categoria")
+        return sorted([c for c in categorias if c])
 
     @staticmethod
     def tags_disponiveis():
-        """Retorna todas as tags únicas."""
-        return livros.distinct("tags")
-    
+        # Se os livros não tiverem o campo 'tags' no Atlas, usamos uma lista padrão
+        tags = livros_col.distinct("tags")
+        if not tags:
+            return ["Ficção", "Romance", "Aventura", "Clássico", "Fantasia"]
+        return sorted([t for t in tags if t])
+
+# ===========================
+# Classe Usuario
+# ===========================
 class Usuario:
-    """
-    Classe que representa um usuário da livraria.
-    """
-    
     def __init__(self, nome, email, senha):
-        """
-        Inicializa um objeto Usuario.
-        :param nome: Nome do usuário.
-        :param email: E-mail do usuário.
-        :param senha: Senha do usuário (deve ser criptografada antes de salvar!).
-        """
         self.nome = nome
         self.email = email
-        self.senha = senha  # Importante: criptografar antes de salvar!
+        self.senha = senha 
 
     def salvar(self):
-        """
-        Salva o usuário no banco de dados.
-        :return: ID do usuário inserido.
-        """
-        # Todo
-        pass
+        dados_usuario = self.__dict__.copy()
+        resultado = usuarios_col.insert_one(dados_usuario)
+        return resultado.inserted_id
 
     @staticmethod
     def buscar_por_email(email):
-        """
-        Busca um usuário pelo e-mail.
-        :param email: E-mail do usuário.
-        :return: Dicionário com os dados do usuário ou None.
-        """
-        # Todo
-        pass
+        return usuarios_col.find_one({"email": email})
 
     @staticmethod
     def buscar_por_id(id_usuario):
-        """
-        Busca um usuário pelo ID.
-        :param id_usuario: ID do usuário (string ou ObjectId).
-        :return: Dicionário com os dados do usuário ou None.
-        """
-        # Todo
-        pass
+        try:
+            return usuarios_col.find_one({"_id": ObjectId(id_usuario)})
+        except:
+            return None
 
 # ===========================
 # Classe Pedido
 # ===========================
-
 class Pedido:
-    """
-    Classe que representa um pedido realizado por um usuário.
-    """
-    
     def __init__(self, id_usuario, livros, data, total, status="pendente"):
-        """
-        Inicializa um objeto Pedido.
-        :param id_usuario: ID do usuário que fez o pedido.
-        :param livros: Lista de dicionários contendo id_livro, quantidade e preço.
-        :param data: Data do pedido (ex: datetime.now()).
-        :param total: Valor total do pedido.
-        :param status: Status do pedido (default: "pendente").
-        """
         self.id_usuario = id_usuario
-        self.livros = livros  # lista de dicionários com id_livro, quantidade, preco
-        self.data = data      # data do pedido (ex: datetime.now())
+        self.livros = livros 
+        self.data = data or datetime.now()
         self.total = total
         self.status = status
 
     def salvar(self):
-        """
-        Salva o pedido no banco de dados.
-        :return: ID do pedido inserido.
-        """
-        # Todo
-        pass
+        dados_pedido = self.__dict__.copy()
+        if isinstance(self.total, (int, float, str)):
+            dados_pedido['total'] = Decimal128(str(self.total))
+        resultado = pedidos_col.insert_one(dados_pedido)
+        return resultado.inserted_id
 
     @staticmethod
     def buscar_por_usuario(id_usuario):
-        """
-        Busca todos os pedidos de um usuário.
-        :param id_usuario: ID do usuário.
-        :return: Lista de pedidos.
-        """
-        # Todo
-        pass
+        return list(pedidos_col.find({"id_usuario": id_usuario}))
 
     @staticmethod
     def buscar_por_id(id_pedido):
-        """
-        Busca um pedido pelo seu ID.
-        :param id_pedido: ID do pedido (string ou ObjectId).
-        :return: Dicionário com os dados do pedido ou None.
-        """
-        # Todo
-        pass
+        try:
+            return pedidos_col.find_one({"_id": ObjectId(id_pedido)})
+        except:
+            return None
