@@ -1,17 +1,17 @@
 from pymongo import MongoClient
 from bson.objectid import ObjectId
+from bson.decimal128 import Decimal128
+from decimal import Decimal
 import os
-from bson.decimal128 import Decimal128 
 from datetime import datetime
 
 # ===========================
-# Configuração da conexão
+# Configuração da conexão com o MongoDB Atlas
 # ===========================
 MONGO_URI = os.environ.get('MONGO_URI')
 client = MongoClient(MONGO_URI)
-db = client.livraria 
-
-livros_col = db.livros
+db = client.livraria  
+livros_col = db.books
 usuarios_col = db.usuarios
 pedidos_col = db.pedidos
 
@@ -19,6 +19,27 @@ pedidos_col = db.pedidos
 # Classe Livro
 # ===========================
 class Livro:
+    def __init__(self, titulo, preco, categoria, tags, autores, mais_recente_edicao, numero_autores, data_publicacao, editora, descricao, isbn, estoque, imagem_capa):
+        self.titulo = titulo
+        self.preco = preco
+        self.categoria = categoria
+        self.tags = tags
+        self.autores = autores
+        self.mais_recente_edicao = mais_recente_edicao
+        self.numero_autores = numero_autores
+        self.data_publicacao = data_publicacao
+        self.editora = editora
+        self.descricao = descricao
+        self.isbn = isbn
+        self.estoque = estoque
+        self.imagem_capa = imagem_capa
+
+    def salvar(self):
+        dados = self.__dict__.copy()
+        dados['preco'] = Decimal128(Decimal(str(self.preco)))
+        resultado = livros_col.insert_one(dados)
+        return resultado.inserted_id
+
     @staticmethod
     def buscar_por_id(id_livro):
         try:
@@ -28,44 +49,54 @@ class Livro:
 
     @staticmethod
     def buscar_todos():
-        # Busca tudo para garantir que a tela inicial não fique vazia
         return list(livros_col.find())
     
     @staticmethod
     def buscar_livros(filtros=None, pagina=1, por_pagina=12):
         query = {}
         if filtros:
-            # Busca flexível: tenta 'título' (com acento) ou 'titulo' (sem)
-            if filtros.get('titulo') or filtros.get('nome'):
-                termo = filtros.get('titulo') or filtros.get('nome')
-                query['$or'] = [
-                    {'título': {'$regex': termo, '$options': 'i'}},
-                    {'titulo': {'$regex': termo, '$options': 'i'}}
-                ]
+            # 1. Pesquisa por Nome/Título (O Campo 'nome' do HTML)
+            if filtros.get('nome'):
+                # Usamos 'titulo' porque é como salvamos no popula_banco.py
+                query['titulo'] = {'$regex': filtros['nome'], '$options': 'i'}
             
-            # Filtro de preço
-            if filtros.get('preco'):
-                query['preco'] = filtros['preco']
-            
-            # Filtro de categoria (tenta com acento se necessário)
-            if filtros.get('categoria'):
-                cat = filtros['categoria']
-                query['categoria'] = {'$in': cat} if isinstance(cat, list) else cat
+            # 2. Filtro de Categorias
+            if filtros.get('categorias'):
+                query['categoria'] = {'$in': filtros['categorias']}
+                
+            # 3. Filtro de Preço (Conversão segura para Decimal128)
+            if filtros.get('preco_min') or filtros.get('preco_max'):
+                query['preco'] = {}
+                try:
+                    if filtros.get('preco_min') and filtros.get('preco_min') != '':
+                        query['preco']['$gte'] = Decimal128(Decimal(str(filtros['preco_min'])))
+                    if filtros.get('preco_max') and filtros.get('preco_max') != '':
+                        query['preco']['$lte'] = Decimal128(Decimal(str(filtros['preco_max'])))
+                    # Se o dicionário de preço ficar vazio após o try, removemos a chave
+                    if not query['preco']:
+                        del query['preco']
+                except:
+                    if 'preco' in query: del query['preco']
 
+        # Paginação
         skip = (pagina - 1) * por_pagina
+        
+        # Execução no banco 'books' (livros_col)
         cursor = livros_col.find(query).skip(skip).limit(por_pagina)
         total = livros_col.count_documents(query)
+        
+        # Log para você ver no terminal se a busca está chegando certa
+        print(f"DEBUG MONGO: Query={query} | Encontrados={total}")
+        
         return list(cursor), total
 
     @staticmethod
     def categorias_disponiveis():
-        # Pega as categorias únicas do seu banco
-        categorias = livros_col.distinct("categoria")
-        return sorted([c for c in categorias if c])
+        categorias = livros_col.distinct("categoria") + livros_col.distinct("categor...")
+        return sorted(list(set([c for c in categorias if c])))
 
     @staticmethod
     def tags_disponiveis():
-        # Se os livros não tiverem o campo 'tags' no Atlas, usamos uma lista padrão
         tags = livros_col.distinct("tags")
         if not tags:
             return ["Ficção", "Romance", "Aventura", "Clássico", "Fantasia"]
@@ -81,8 +112,8 @@ class Usuario:
         self.senha = senha 
 
     def salvar(self):
-        dados_usuario = self.__dict__.copy()
-        resultado = usuarios_col.insert_one(dados_usuario)
+        dados = self.__dict__.copy()
+        resultado = usuarios_col.insert_one(dados)
         return resultado.inserted_id
 
     @staticmethod
@@ -108,10 +139,10 @@ class Pedido:
         self.status = status
 
     def salvar(self):
-        dados_pedido = self.__dict__.copy()
+        dados = self.__dict__.copy()
         if isinstance(self.total, (int, float, str)):
-            dados_pedido['total'] = Decimal128(str(self.total))
-        resultado = pedidos_col.insert_one(dados_pedido)
+            dados['total'] = Decimal128(Decimal(str(self.total)))
+        resultado = pedidos_col.insert_one(dados)
         return resultado.inserted_id
 
     @staticmethod
