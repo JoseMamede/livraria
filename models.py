@@ -53,47 +53,20 @@ class Livro:
     
     @staticmethod
     def buscar_livros(filtros=None, pagina=1, por_pagina=12):
-        query = {}
-        if filtros:
-            # 1. Pesquisa por Nome/Título (O Campo 'nome' do HTML)
-            if filtros.get('nome'):
-                # Usamos 'titulo' porque é como salvamos no popula_banco.py
-                query['titulo'] = {'$regex': filtros['nome'], '$options': 'i'}
-            
-            # 2. Filtro de Categorias
-            if filtros.get('categorias'):
-                query['categoria'] = {'$in': filtros['categorias']}
-                
-            # 3. Filtro de Preço (Conversão segura para Decimal128)
-            if filtros.get('preco_min') or filtros.get('preco_max'):
-                query['preco'] = {}
-                try:
-                    if filtros.get('preco_min') and filtros.get('preco_min') != '':
-                        query['preco']['$gte'] = Decimal128(Decimal(str(filtros['preco_min'])))
-                    if filtros.get('preco_max') and filtros.get('preco_max') != '':
-                        query['preco']['$lte'] = Decimal128(Decimal(str(filtros['preco_max'])))
-                    # Se o dicionário de preço ficar vazio após o try, removemos a chave
-                    if not query['preco']:
-                        del query['preco']
-                except:
-                    if 'preco' in query: del query['preco']
+        query = filtros if filtros else {}
+        if 'nome' in query and 'titulo' not in query:
+            query['titulo'] = {'$regex': query.pop('nome'), '$options': 'i'}
 
-        # Paginação
         skip = (pagina - 1) * por_pagina
-        
-        # Execução no banco 'books' (livros_col)
         cursor = livros_col.find(query).skip(skip).limit(por_pagina)
         total = livros_col.count_documents(query)
-        
-        # Log para você ver no terminal se a busca está chegando certa
-        print(f"DEBUG MONGO: Query={query} | Encontrados={total}")
+        print(f"DEBUG: Buscando com a query: {query} | Total: {total}")
         
         return list(cursor), total
 
     @staticmethod
     def categorias_disponiveis():
-        categorias = livros_col.distinct("categoria") + livros_col.distinct("categor...")
-        return sorted(list(set([c for c in categorias if c])))
+        return sorted(livros_col.distinct("categoria"))
 
     @staticmethod
     def tags_disponiveis():
